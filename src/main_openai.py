@@ -140,6 +140,11 @@ def main():
             st.write(f"Uploaded Document: {file.name}")
             logging.info("Uploaded Document: %s", file.name)
 
+    # Combine document content if necessary
+    if documents:
+        combined_content = "\n\n".join(documents)
+        documents = [combined_content]  # Use the combined content for processing
+
     # RAG configuration
     st.sidebar.header("RAG Configuration")
     rag_enabled = st.sidebar.checkbox("Enable RAG", value=False)
