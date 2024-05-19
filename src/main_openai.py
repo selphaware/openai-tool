@@ -39,6 +39,7 @@ def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[
         logging.info("Executing GPT-4 with system_instruction: %s, prompt: %s, model_type: %s", system_instruction, prompt, model_type)
         if documents:
             logging.info("Documents provided: %s", documents)
+
         if rag_config:
             logging.info("RAG configuration: %s", rag_config)
 
@@ -50,6 +51,7 @@ def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[
         if documents:
             for doc in documents:
                 messages.append({"role": "user", "content": doc})
+            logging.info("Messages prepared for API call: %s", messages)
 
         # Call the GPT-4 model using the updated API
         response = openai.ChatCompletion.create(
@@ -69,7 +71,9 @@ def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[
 # Function to read text from DOCX files
 def read_docx(file):
     doc = Document(file)
-    return "\n".join([para.text for para in doc.paragraphs])
+    text = "\n".join([para.text for para in doc.paragraphs])
+    logging.info("Read DOCX content: %s", text[:500])  # Log first 500 characters
+    return text
 
 # Function to read text from PDF files
 def read_pdf(file):
@@ -77,6 +81,7 @@ def read_pdf(file):
     text = ""
     for page in doc:
         text += page.get_text()
+    logging.info("Read PDF content: %s", text[:500])  # Log first 500 characters
     return text
 
 # Define the main Streamlit app
