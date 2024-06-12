@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 from docx import Document
 import fitz  # PyMuPDF
+import pandas as pd
 
 # Configure logging
 log_folder = "logs"
@@ -21,8 +22,17 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s"
 )
 
-# Get OpenAI API key from environment variable
-openai.api_key = os.getenv('OPENAI_KEY')  # Note: Use 'OPENAI_KEY' for the environment variable
+# Get Azure OpenAI API credentials from environment variables
+api_type = os.getenv('AZURE_OPENAI_API_TYPE', 'azure')
+api_base = os.getenv('AZURE_OPENAI_API_BASE')
+api_version = os.getenv('AZURE_OPENAI_API_VERSION')
+api_key = os.getenv('AZURE_OPENAI_API_KEY')
+
+# Setup OpenAI configuration for Azure
+openai.api_type = api_type
+openai.api_base = api_base
+openai.api_version = api_version
+openai.api_key = api_key
 
 # Function to list available models
 def list_models():
@@ -33,10 +43,27 @@ def list_models():
         st.error(f"Error fetching models: {e}")
         return []
 
+# Function to chunk text into smaller parts
+def chunk_text(text: str, max_tokens: int) -> List[str]:
+    words = text.split()
+    chunks = []
+    current_chunk = []
+
+    for word in words:
+        current_chunk.append(word)
+        if len(current_chunk) >= max_tokens:
+            chunks.append(" ".join(current_chunk))
+            current_chunk = []
+
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+
+    return chunks
+
 # Define a function to handle GPT-4 execution
-def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[str]] = None, rag_config: Optional[Dict[str, Any]] = None, model_type: str = "gpt-4") -> str:
+def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[str]] = None, rag_config: Optional[Dict[str, Any]] = None, model_type: str = "gpt-4", temperature: float = 0.7) -> str:
     try:
-        logging.info("Executing GPT-4 with system_instruction: %s, prompt: %s, model_type: %s", system_instruction, prompt, model_type)
+        logging.info("Executing GPT-4 with system_instruction: %s, prompt: %s, model_type: %s, temperature: %s", system_instruction, prompt, model_type, temperature)
         if documents:
             logging.info("Documents provided: %s", documents)
 
@@ -50,20 +77,23 @@ def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[
         ]
         if documents:
             for doc in documents:
-                messages.append({"role": "user", "content": doc})
+                chunks = chunk_text(doc, rag_config['chunk_size'])
+                for chunk in chunks:
+                    messages.append({"role": "user", "content": chunk})
             logging.info("Messages prepared for API call: %s", messages)
 
         # Call the GPT-4 model using the updated API
         response = openai.ChatCompletion.create(
             model=model_type,
             messages=messages,
-            max_tokens=1024
+            max_tokens=rag_config['text_size'],
+            temperature=temperature
         )
 
         result = response['choices'][0]['message']['content']
         logging.info("GPT-4 response: %s", result)
         return result
-    except Exception as e:
+    except openai.error.OpenAIError as e:
         logging.error("Error during GPT-4 execution: %s", e)
         st.error(f"Error: {e}")
         return ""
@@ -72,7 +102,7 @@ def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[
 def read_docx(file):
     doc = Document(file)
     text = "\n".join([para.text for para in doc.paragraphs])
-    logging.info("Read DOCX content: %s", text[:500])  # Log first 500 characters
+    logging.info("Read DOCX content")
     return text
 
 # Function to read text from PDF files
@@ -81,7 +111,35 @@ def read_pdf(file):
     text = ""
     for page in doc:
         text += page.get_text()
-    logging.info("Read PDF content: %s", text[:500])  # Log first 500 characters
+    logging.info("Read PDF content")
+    return text
+
+# Function to read text from CSV files
+def read_csv(file):
+    df = pd.read_csv(file)
+    text = df.to_string(index=False)
+    logging.info("Read CSV content")
+    return text
+
+# Function to read text from Excel files
+def read_excel(file):
+    df = pd.read_excel(file)
+    text = df.to_string(index=False)
+    logging.info("Read Excel content")
+    return text
+
+# Function to read text from Feather files
+def read_feather(file):
+    df = pd.read_feather(file)
+    text = df.to_string(index=False)
+    logging.info("Read Feather content")
+    return text
+
+# Function to read text from Parquet files
+def read_parquet(file):
+    df = pd.read_parquet(file)
+    text = df.to_string(index=False)
+    logging.info("Read Parquet content")
     return text
 
 # Define the main Streamlit app
@@ -120,25 +178,38 @@ def main():
     uploaded_files = st.file_uploader(
         "Upload Documents",
         accept_multiple_files=True,
-        type=["txt", "pdf", "docx"]
+        type=["txt", "pdf", "docx", "csv", "xlsx", "feather", "parquet"]
     )
 
     # Display uploaded files
     documents = []
     if uploaded_files:
         for file in uploaded_files:
-            if file.type == "text/plain":
-                file_text = file.read().decode("utf-8")
-            elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                file_text = read_docx(file)
-            elif file.type == "application/pdf":
-                file_text = read_pdf(file)
-            else:
-                st.error(f"Unsupported file type: {file.type}")
-                continue
-            documents.append(file_text)
-            st.write(f"Uploaded Document: {file.name}")
-            logging.info("Uploaded Document: %s", file.name)
+            file_extension = os.path.splitext(file.name)[1].lower()
+            try:
+                if file_extension == ".txt":
+                    file_text = file.read().decode("utf-8")
+                elif file_extension == ".docx":
+                    file_text = read_docx(file)
+                elif file_extension == ".pdf":
+                    file_text = read_pdf(file)
+                elif file_extension == ".csv":
+                    file_text = read_csv(file)
+                elif file_extension == ".xlsx":
+                    file_text = read_excel(file)
+                elif file_extension == ".feather":
+                    file_text = read_feather(file)
+                elif file_extension == ".parquet":
+                    file_text = read_parquet(file)
+                else:
+                    st.error(f"Unsupported file type: {file_extension}")
+                    continue
+                documents.append(file_text)
+                st.write(f"Uploaded Document: {file.name}")
+                logging.info("Uploaded Document: %s", file.name)
+            except Exception as e:
+                st.error(f"Error reading {file.name}: {e}")
+                logging.error(f"Error reading {file.name}: {e}")
 
     # Combine document content if necessary
     if documents:
@@ -154,12 +225,14 @@ def main():
         chunk_size = st.sidebar.number_input("Chunk Size (int)", value=128, help="Number of tokens per chunk.")
         top_k = st.sidebar.number_input("Top K (int)", value=5, help="Number of top documents to retrieve.")
         threshold = st.sidebar.number_input("Threshold (float)", value=0.5, step=0.1, help="Threshold for filtering retrieved documents.")
+        temperature = st.sidebar.slider("Temperature (float)", min_value=0.0, max_value=1.0, value=0.7, step=0.1, help="Control the randomness of the output")
 
         rag_settings = {
             "text_size": text_size,
             "chunk_size": chunk_size,
             "top_k": top_k,
-            "threshold": threshold
+            "threshold": threshold,
+            "temperature": temperature
         }
         logging.info("RAG settings enabled: %s", rag_settings)
     else:
@@ -168,7 +241,7 @@ def main():
     # Execute button
     if st.button("Execute"):
         with st.spinner("Processing..."):
-            result = execute_gpt4(system_instruction, prompt, documents, rag_settings, model_type)
+            result = execute_gpt4(system_instruction, prompt, documents, rag_settings, model_type, rag_settings['temperature'] if rag_settings else 0.7)
             st.success("Execution complete!")
             st.text_area("Response", value=result, height=300)
 
