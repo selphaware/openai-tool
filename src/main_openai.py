@@ -61,9 +61,9 @@ def chunk_text(text: str, max_tokens: int) -> List[str]:
     return chunks
 
 # Define a function to handle GPT-4 execution
-def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[str]] = None, rag_config: Optional[Dict[str, Any]] = None, model_type: str = "gpt-4", temperature: float = 0.7) -> str:
+def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[str]] = None, rag_config: Optional[Dict[str, Any]] = None, engine: str = "gpt-4-32k", temperature: float = 0.7) -> str:
     try:
-        logging.info("Executing GPT-4 with system_instruction: %s, prompt: %s, model_type: %s, temperature: %s", system_instruction, prompt, model_type, temperature)
+        logging.info("Executing GPT-4 with system_instruction: %s, prompt: %s, engine: %s, temperature: %s", system_instruction, prompt, engine, temperature)
         if documents:
             logging.info("Documents provided: %s", documents)
 
@@ -89,7 +89,7 @@ def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[
 
         # Call the GPT-4 model using the updated API
         response = openai.ChatCompletion.create(
-            model=model_type,
+            engine=engine,
             messages=messages,
             max_tokens=rag_config['text_size'],
             temperature=temperature
@@ -166,7 +166,7 @@ def main():
     model_type = st.selectbox(
         "Select Model Type",
         options=available_models,
-        index=available_models.index("gpt-4") if "gpt-4" in available_models else 0,
+        index=available_models.index("gpt-4-32k") if "gpt-4-32k" in available_models else 0,
         help="Choose the model type to use for processing."
     )
 
@@ -265,3 +265,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
