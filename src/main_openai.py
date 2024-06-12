@@ -82,6 +82,11 @@ def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[
                     messages.append({"role": "user", "content": chunk})
             logging.info("Messages prepared for API call: %s", messages)
 
+        # Ensure total tokens do not exceed the model's limit
+        total_message_tokens = sum(len(m['content']) for m in messages)
+        if total_message_tokens + rag_config['text_size'] > 32768:
+            raise ValueError("Combined length of input messages and completion exceeds the model's maximum context length.")
+
         # Call the GPT-4 model using the updated API
         response = openai.ChatCompletion.create(
             model=model_type,
@@ -95,6 +100,10 @@ def execute_gpt4(system_instruction: str, prompt: str, documents: Optional[List[
         return result
     except openai.error.OpenAIError as e:
         logging.error("Error during GPT-4 execution: %s", e)
+        st.error(f"Error: {e}")
+        return ""
+    except ValueError as e:
+        logging.error("Token limit error: %s", e)
         st.error(f"Error: {e}")
         return ""
 
@@ -221,8 +230,8 @@ def main():
     rag_enabled = st.sidebar.checkbox("Enable RAG", value=False)
 
     if rag_enabled:
-        text_size = st.sidebar.number_input("Text Size (int)", value=512, help="Size of the text chunks to be processed.")
-        chunk_size = st.sidebar.number_input("Chunk Size (int)", value=128, help="Number of tokens per chunk.")
+        text_size = st.sidebar.number_input("Text Size (int)", value=10000, help="Size of the text chunks to be processed.")
+        chunk_size = st.sidebar.number_input("Chunk Size (int)", value=512, help="Number of tokens per chunk.")
         top_k = st.sidebar.number_input("Top K (int)", value=5, help="Number of top documents to retrieve.")
         threshold = st.sidebar.number_input("Threshold (float)", value=0.5, step=0.1, help="Threshold for filtering retrieved documents.")
         temperature = st.sidebar.slider("Temperature (float)", min_value=0.0, max_value=1.0, value=0.7, step=0.1, help="Control the randomness of the output")
